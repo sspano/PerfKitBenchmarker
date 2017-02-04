@@ -27,18 +27,18 @@ SHOC_GIT_URL = 'https://github.com/vetter/shoc.git'
 SHOC_DIR = '%s/shoc' % INSTALL_DIR
 SHOC_BIN_DIR = os.path.join(SHOC_DIR, 'bin')
 SHOC_PATCH = 'shoc_config.patch'
-APT_PACKAGES = 'wget automake git zip'
+APT_PACKAGES = 'wget automake git zip libopenmpi-dev'
 
 def AptInstall(vm):
   """Installs the CUDA HPL package on the VM."""
   vm.InstallPackages(APT_PACKAGES)
   vm.Install('cuda_toolkit_8')
-  vm.RemoteCommand('export PATH=$PATH:/usr/local/cuda/bin') #TODO: Ugly!
-  vm.RemoteCommand('git clone %s' % SHOC_GIT_URL)
-  vm.RemoteCommand('cd %s && ./configure' % SHOC_DIR)
-  vm.PushFile(data.ResourcePath(SHOC_PATCH), INSTALL_DIR)
-  vm.RemoteCommand('cd %s && patch -p0 < %s' % (INSTALL_DIR, SHOC_PATCH))
-  vm.RemoteCommand('cd %s && make -j8' % (SHOC_DIR, SHOC_DIR))
+  vm.RemoteCommand('cd %s && git clone %s' % (INSTALL_DIR, SHOC_GIT_URL))
+  vm.RemoteCommand(('cd %s && ./configure '
+                    'CUDA_CPPFLAGS=-gencode=arch=compute_37,code=compute_37 '
+                    'NVCC=/usr/local/cuda/bin/nvcc')
+                    % SHOC_DIR)
+  vm.RemoteCommand('cd %s && make -j8 && make install' % SHOC_DIR)
 
 
 def YumInstall(vm):

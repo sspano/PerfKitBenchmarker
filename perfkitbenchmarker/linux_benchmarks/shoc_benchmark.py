@@ -23,7 +23,6 @@ from perfkitbenchmarker import sample
 from perfkitbenchmarker import regex_util
 from perfkitbenchmarker.linux_packages import cuda_toolkit_8
 
-
 FLAGS = flags.FLAGS
 
 BENCHMARK_NAME = 'shoc'
