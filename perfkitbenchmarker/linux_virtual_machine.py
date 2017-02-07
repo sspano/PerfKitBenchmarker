@@ -747,10 +747,18 @@ class DebianMixin(BaseLinuxMixin):
       # "Hash Sum mismatch" errors (the files will be restored when
       # apt-get update is run again).
       self.RemoteCommand('sudo rm -r /var/lib/apt/lists/*')
-      # TODO: Verify that the following is ok. I don't know why it is 
+      # TODO: Verify that the following is ok. I don't know why it is
       # only screwing me up. ~ferneyhough@
-      self.RemoteCommand('sudo rm /var/cache/apt/archives/lock')
-      self.RemoteCommand('sudo rm /var/lib/dpkg/lock')
+      try:
+        self.RemoteCommand('sudo rm /var/cache/apt/archives/lock')
+      except Exception:
+        pass
+
+      try:
+        self.RemoteCommand('sudo rm /var/lib/dpkg/lock')
+      except Exception:
+        pass
+
       raise e
 
   def SnapshotPackages(self):
