@@ -34,7 +34,7 @@ flags.DEFINE_integer('shoc_iterations', 1,
 FLAGS = flags.FLAGS
 
 BENCHMARK_NAME = 'shoc'
-BENCHMARK_VERSION = '0.1'
+BENCHMARK_VERSION = '0.2'
 # Note on the config: gce_migrate_on_maintenance must be false,
 # because GCE does not support migrating the user's GPU state.
 BENCHMARK_CONFIG = """
@@ -121,18 +121,19 @@ def Run(benchmark_spec):
   # clock speed without having to re-prepare the VM.
   cuda_toolkit_8.SetAndConfirmGpuClocks(vm)
   num_iterations = FLAGS.shoc_iterations
-  shocdriver_path = os.path.join(shoc_benchmark_suite.SHOC_BIN_DIR,
-                                 'shocdriver')
+  stencil2d_path = os.path.join(shoc_benchmark_suite.SHOC_BIN_DIR,
+                                 'TP', 'CUDA', 'Stencil2D'
   num_gpus = cuda_toolkit_8.QueryNumberOfGpus(vm)
   metadata = {}
   results = []
   metadata['benchmark_version'] = BENCHMARK_VERSION
   metadata['num_iterations'] = num_iterations
-  metadata['num_gpus_available'] = num_gpus
+  metadata['num_gpus'] = num_gpus
   metadata['memory_clock_MHz'] = FLAGS.gpu_clock_speeds[0]
   metadata['graphics_clock_MHz'] = FLAGS.gpu_clock_speeds[1]
-
-  run_command = '%s -s 4 -n %s -cuda -benchmark Stencil2D' % (shocdriver_path, num_gpus)
+  run_command = 'mpirun -np %s %s --customSize 20480,20480' %
+    (num_gpus, stencil2d_path)
+  metadata['command'] = run_cmd
   stdout, _ = vm.RemoteCommand(run_command, should_log=True)
   results.extend(_MakeSamplesFromOutput(stdout, metadata))
   return results
