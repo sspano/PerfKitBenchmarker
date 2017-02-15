@@ -29,10 +29,11 @@ class ShocBenchmarkTestCase(unittest.TestCase):
     self.addCleanup(p.stop)
 
     path = os.path.join(os.path.dirname(__file__), '../data',
-                        'shoc_test_results.txt')
+                        'stencil2d_output.txt')
     with open(path) as fp:
       self.test_output = fp.read()
 
+  @unittest.skip('old')
   def testMakeSampleFromOutput(self):
     testMetadata = { 'foo': 'bar' }
     actual = shoc_benchmark._MakeSamplesFromOutput(
@@ -44,6 +45,23 @@ class ShocBenchmarkTestCase(unittest.TestCase):
     self.assertEqual('GFLOPS', stencil_results.unit)
     self.assertEqual(testMetadata, stencil_results.metadata)
 
+  def testMakeSampleFromOutput(self):
+    testMetadata = { 'foo': 'bar' }
+    actual = shoc_benchmark._MakeSamplesFromStencilOutput(
+        self.test_output, testMetadata)
+    results_dict = { x.metric: x for x in actual }
+
+    stencil_dp_results = results_dict['Stencil2D DP mean']
+    self.assertEqual('Stencil2D DP mean', stencil_dp_results.metric)
+    self.assertEqual(474.128, stencil_dp_results.value)
+    self.assertEqual('GFLOPS', stencil_dp_results.unit)
+    self.assertEqual(testMetadata, stencil_dp_results.metadata)
+
+    stencil_sp_results = results_dict['Stencil2D SP mean']
+    self.assertEqual('Stencil2D SP mean', stencil_sp_results.metric)
+    self.assertEqual(750.593, stencil_sp_results.value)
+    self.assertEqual('GFLOPS', stencil_sp_results.unit)
+    self.assertEqual(testMetadata, stencil_sp_results.metadata)
 
 if __name__ == '__main__':
   unittest.main()

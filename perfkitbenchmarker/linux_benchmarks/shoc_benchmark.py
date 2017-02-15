@@ -104,6 +104,37 @@ def _MakeSamplesFromOutput(stdout, metadata):
         metadata))
   return results
   
+def _MakeSamplesFromStencilOutput(stdout, metadata):
+  dp_mean_results = [x for x in stdout.splitlines() if x.find('DP_Sten2D(mean)') != -1][0].split()
+  dp_units = dp_mean_results[2]
+  dp_median = float(dp_mean_results[3])
+  dp_mean = float(dp_mean_results[4])
+  dp_stddev = float(dp_mean_results[5])
+  dp_min = float(dp_mean_results[6])
+  dp_max = float(dp_mean_results[7])
+   
+  sp_mean_results = [x for x in stdout.splitlines() if x.find('SP_Sten2D(mean)') != -1][0].split()
+  sp_units = sp_mean_results[2]
+  sp_median = float(sp_mean_results[3])
+  sp_mean = float(sp_mean_results[4])
+  sp_stddev = float(sp_mean_results[5])
+  sp_min = float(sp_mean_results[6])
+  sp_max = float(sp_mean_results[7])
+
+  results = []
+  results.append(sample.Sample(
+      'Stencil2D DP mean',
+      dp_mean,
+      dp_units,
+      metadata))
+
+  results.append(sample.Sample(
+      'Stencil2D SP mean',
+      sp_mean,
+      sp_units,
+      metadata))
+  return results
+
 
 def Run(benchmark_spec):
   """Sets the GPU clock speed and runs the SHOC benchmark.
@@ -122,7 +153,7 @@ def Run(benchmark_spec):
   cuda_toolkit_8.SetAndConfirmGpuClocks(vm)
   num_iterations = FLAGS.shoc_iterations
   stencil2d_path = os.path.join(shoc_benchmark_suite.SHOC_BIN_DIR,
-                                 'TP', 'CUDA', 'Stencil2D'
+                                'TP', 'CUDA', 'Stencil2D')
   num_gpus = cuda_toolkit_8.QueryNumberOfGpus(vm)
   metadata = {}
   results = []
@@ -131,20 +162,12 @@ def Run(benchmark_spec):
   metadata['num_gpus'] = num_gpus
   metadata['memory_clock_MHz'] = FLAGS.gpu_clock_speeds[0]
   metadata['graphics_clock_MHz'] = FLAGS.gpu_clock_speeds[1]
-  run_command = 'mpirun -np %s %s --customSize 20480,20480' %
-    (num_gpus, stencil2d_path)
-  metadata['command'] = run_cmd
+  run_command = ('mpirun -np %s %s -s 4' %
+                 (num_gpus, stencil2d_path))
+  metadata['run_command'] = run_command
   stdout, _ = vm.RemoteCommand(run_command, should_log=True)
-  results.extend(_MakeSamplesFromOutput(stdout, metadata))
+  results.extend(_MakeSamplesFromStencilOutput(stdout, metadata))
   return results
-  #run_command = ('%s/extras/demo_suite/bandwidthTest --device=all'
-  #               % cuda_toolkit_8.CUDA_TOOLKIT_INSTALL_DIR)
-  #for i in range(num_iterations):
-  #  stdout, _ = vm.RemoteCommand(run_command, should_log=True)
-  #  raw_results.append(_ParseOutputFromSingleIteration(stdout))
-  #  if 'device_info' not in metadata:
-  #    metadata['device_info'] = _ParseDeviceInfo(stdout)
-  #return _CalculateMetricsOverAllIterations(raw_results, metadata)
 
 
 def Cleanup(benchmark_spec):
