@@ -41,7 +41,7 @@ BENCHMARK_SETS = {
             'cluster_boot', 'copy_throughput', 'coremark', 'fio',
             'hadoop_terasort', 'hpcc', 'iperf', 'mesh_network',
             'mongodb_ycsb', 'netperf', 'object_storage_service', 'ping',
-            'redis', 'shoc', 'speccpu2006', 'sysbench_oltp', 'unixbench']
+            'redis', 'shoc', 'speccpu2006', 'sysbench_oltp', 'unixbench',           'assert_num_gpus']
     },
     'arm_set': {
         MESSAGE: 'ARM benchmark set.',

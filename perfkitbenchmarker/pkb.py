@@ -89,6 +89,7 @@ from perfkitbenchmarker import traces
 from perfkitbenchmarker import version
 from perfkitbenchmarker import vm_util
 from perfkitbenchmarker import windows_benchmarks
+from perfkitbenchmarker import abort
 from perfkitbenchmarker.configs import benchmark_config_spec
 from perfkitbenchmarker.linux_benchmarks import cluster_boot_benchmark
 from perfkitbenchmarker.publisher import SampleCollector
@@ -534,7 +535,7 @@ def RunBenchmark(spec, collector):
           DoCleanupPhase(spec, detailed_timer)
         raise
       finally:
-        if stages.TEARDOWN in FLAGS.run_stage:
+        if stages.TEARDOWN in FLAGS.run_stage and not abort.IsAborted():
           spec.Delete()
         events.benchmark_end.send(benchmark_spec=spec)
         # Pickle spec to save final resource state.
