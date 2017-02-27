@@ -535,6 +535,7 @@ def RunBenchmark(spec, collector):
           DoCleanupPhase(spec, detailed_timer)
         raise
       finally:
+        print 'aborting? ', abort.IsAborted()
         if stages.TEARDOWN in FLAGS.run_stage and not abort.IsAborted():
           spec.Delete()
         events.benchmark_end.send(benchmark_spec=spec)

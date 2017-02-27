@@ -67,7 +67,6 @@ def CheckPrerequisites(benchmark_config):
 
 
 def Prepare(benchmark_spec):
-  abort.AbortWithoutCleanup('shit')
   vm = benchmark_spec.vms[0]
   vm.Install('cuda_toolkit_8')
   
@@ -83,7 +82,8 @@ def Run(benchmark_spec):
       abort.AbortWithoutCleanup(
           'got incorrect number of gpus. Expected %s, recieved %s'
           % (expected_num_gpus, num_gpus)) 
-  return results
+      
+  return []
 
 
 def Cleanup(benchmark_spec):

@@ -117,7 +117,10 @@ def QueryGpuClockSpeed(vm, device_id):
 
 
 def AptInstall(vm):
-  """Installs CUDA toolkit 8 on the VM."""
+  """Installs CUDA toolkit 8 on the VM, if not already installed."""
+  # TODO: Not safe at all. Need to check versions, etc. 
+  # Making a lot of assumptions here.
+  vm.Remote
   vm.Install('build_tools')
   vm.Install('wget')
   vm.RemoteCommand('wget %s' % CUDA_TOOLKIT_UBUNTU_URL)
