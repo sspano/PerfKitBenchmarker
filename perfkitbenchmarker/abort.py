@@ -7,7 +7,7 @@ class __State():
 
 
 __m = __State()
-
+__m.__ABORT_CALLED = False
 
 def IsAborted():
   return __m.__ABORT_CALLED

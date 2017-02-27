@@ -41,7 +41,7 @@ assert_num_gpus:
           zone: us-east1-d
           boot_disk_size: 200
         AWS:
-          image: ami-a9d276c9
+          image: ami-c870f3a8
           machine_type: p2.xlarge
           zone: us-west-2b
           boot_disk_size: 200
@@ -75,7 +75,7 @@ def Run(benchmark_spec):
   vm = benchmark_spec.vms[0]
   cuda_toolkit_8.SetAndConfirmGpuClocks(vm)
 
-  for i in range(100): 
+  for i in range(10): 
     num_gpus = cuda_toolkit_8.QueryNumberOfGpus(vm)
     expected_num_gpus = num_gpus_map_util.num_gpus_map[vm.machine_type]
     if num_gpus != expected_num_gpus: 
