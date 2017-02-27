@@ -75,7 +75,7 @@ def Run(benchmark_spec):
   vm = benchmark_spec.vms[0]
   cuda_toolkit_8.SetAndConfirmGpuClocks(vm)
 
-  for i in range(10): 
+  for i in range(100): 
     num_gpus = cuda_toolkit_8.QueryNumberOfGpus(vm)
     expected_num_gpus = num_gpus_map_util.num_gpus_map[vm.machine_type]
     if num_gpus != expected_num_gpus: 
