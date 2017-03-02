@@ -24,6 +24,7 @@ All VM specifics are self-contained and the class provides methods to
 operate on the VM: boot, shutdown, etc.
 """
 
+import ipdb
 import json
 import logging
 import re
