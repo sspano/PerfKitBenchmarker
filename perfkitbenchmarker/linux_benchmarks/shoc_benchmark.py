@@ -34,7 +34,7 @@ flags.DEFINE_integer('shoc_iterations', 1,
 FLAGS = flags.FLAGS
 
 BENCHMARK_NAME = 'shoc'
-BENCHMARK_VERSION = '0.21'
+BENCHMARK_VERSION = '0.22'
 # Note on the config: gce_migrate_on_maintenance must be false,
 # because GCE does not support migrating the user's GPU state.
 BENCHMARK_CONFIG = """
@@ -46,7 +46,8 @@ shoc:
     default:
       vm_spec:
         GCP:
-          image: ubuntu1604-cuda-hpl
+          image: ubuntu-1604-xenial-v20170302
+          image_project: ubuntu-os-cloud
           machine_type: n1-standard-4-k80x1
           zone: us-east1-d
           boot_disk_size: 200
