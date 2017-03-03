@@ -46,8 +46,7 @@ shoc:
     default:
       vm_spec:
         GCP:
-          image: ubuntu-1604-xenial-v20170302
-          image_project: ubuntu-os-cloud
+          image: cuda-toolkit-8-shoc
           machine_type: n1-standard-4-k80x1
           zone: us-east1-d
           boot_disk_size: 200
@@ -60,6 +59,7 @@ shoc:
           image: Canonical:UbuntuServer:16.04.0-LTS:latest
           machine_type: Standard_NC6
           zone: eastus
+      vm_count: null
 """
 
 
@@ -74,8 +74,7 @@ def CheckPrerequisites(benchmark_config):
   Raises:
     perfkitbenchmarker.data.ResourceNotFound: On missing resource.
   """
-  #cuda_toolkit_8.CheckPrerequisites()
-
+  pass
 
 def Prepare(benchmark_spec):
   """Install SHOC.
@@ -84,8 +83,9 @@ def Prepare(benchmark_spec):
     benchmark_spec: The benchmark specification. Contains all data that is
         required to run the benchmark.
   """
-  vm = benchmark_spec.vms[0]
-  vm.Install('shoc_benchmark_suite')
+  for vm in benchmark_spec.vms:
+    vm.Install('shoc_benchmark_suite')
+    vm.AuthenticateVm()
 
 
 def _ExtractResult(shoc_output, result_name):

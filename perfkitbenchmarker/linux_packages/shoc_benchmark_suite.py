@@ -29,10 +29,26 @@ SHOC_BIN_DIR = os.path.join(SHOC_DIR, 'bin')
 SHOC_PATCH = 'shoc_config.patch'
 APT_PACKAGES = 'wget automake git zip libopenmpi-dev'
 
+
+def _IsShocInstalled(vm):
+  """Returns whether shoc is installed or not"""
+  command = os.path.join(SHOC_BIN_DIR, 'shocdriver')
+  resp, _ = vm.RemoteHostCommand('command -v %s' % command,
+                                 ignore_failure=True,
+                                 suppress_warning=True)
+  if resp.rstrip() == "":
+    return False
+  return True
+
+
 def AptInstall(vm):
-  """Installs the CUDA HPL package on the VM."""
+  """Installs the SHOC benchmark suite on the VM."""
+  if _IsShocInstalled(vm):
+    return
+
   vm.InstallPackages(APT_PACKAGES)
   vm.Install('cuda_toolkit_8')
+
   vm.RemoteCommand('cd %s && git clone %s' % (INSTALL_DIR, SHOC_GIT_URL))
   vm.RemoteCommand(('cd %s && ./configure '
                     'CUDA_CPPFLAGS=-gencode=arch=compute_37,code=compute_37 '
