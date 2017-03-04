@@ -22,8 +22,10 @@ from perfkitbenchmarker import configs
 from perfkitbenchmarker import flags
 from perfkitbenchmarker import sample
 from perfkitbenchmarker import regex_util
+from perfkitbenchmarker import vm_util
 from perfkitbenchmarker.linux_packages import shoc_benchmark_suite
 from perfkitbenchmarker.linux_packages import cuda_toolkit_8
+from perfkitbenchmarker import num_gpus_map_util
 
 
 flags.DEFINE_integer('shoc_iterations', 1,
@@ -33,6 +35,7 @@ flags.DEFINE_integer('shoc_iterations', 1,
 
 FLAGS = flags.FLAGS
 
+MACHINEFILE = 'machinefile'
 BENCHMARK_NAME = 'shoc'
 BENCHMARK_VERSION = '0.22'
 # Note on the config: gce_migrate_on_maintenance must be false,
@@ -46,7 +49,8 @@ shoc:
     default:
       vm_spec:
         GCP:
-          image: cuda-toolkit-8-shoc
+          image: ubuntu-1604-xenial-v20170303
+          image_project: ubuntu-os-cloud
           machine_type: n1-standard-4-k80x1
           zone: us-east1-d
           boot_disk_size: 200
@@ -76,6 +80,18 @@ def CheckPrerequisites(benchmark_config):
   """
   pass
 
+
+def AssertCorrectNumberOfGpus(vm):
+  """Assert that VM is reporting the correct number of GPUs."""
+
+  expected_num_gpus = num_gpus_map_util.gpus_per_vm[vm.machine_type]
+  actual_num_gpus = cuda_toolkit_8.QueryNumberOfGpus(vm)
+  if actual_num_gpus != expected_num_gpus:
+    raise Exception('VM reported incorrect number of GPUs. ',
+                    'Expected %s, received %s' %
+                    (expected_num_gpus, actual_num_gpus))
+
+
 def Prepare(benchmark_spec):
   """Install SHOC.
 
@@ -83,9 +99,33 @@ def Prepare(benchmark_spec):
     benchmark_spec: The benchmark specification. Contains all data that is
         required to run the benchmark.
   """
-  for vm in benchmark_spec.vms:
+  for vm in benchmark_spec.vms:  #TODO: run-threaded
     vm.Install('shoc_benchmark_suite')
-    vm.AuthenticateVm()
+    AssertCorrectNumberOfGpus(vm)
+    cuda_toolkit_8.SetAndConfirmGpuClocks(vm)
+    vm.AuthenticateVm()  # Configure ssh between vms for MPI
+
+  master_vm = benchmark_spec.vms[0]
+  num_gpus = cuda_toolkit_8.QueryNumberOfGpus(master_vm)
+  CreateAndPushMachineFile(benchmark_spec.vms, num_gpus)
+
+
+def CreateAndPushMachineFile(vms, num_gpus):
+  """Create a file with the IP of each machine in the cluster on its own line.
+     TODO: support different number of gpus per machine
+     TODO: add num_gpus to linux_virtual_machine
+
+  Args:
+    vms: The list of vms which will be in the cluster.
+  """
+  with vm_util.NamedTemporaryFile() as machine_file:
+    master_vm = vms[0]
+    machine_file.write('localhost slots=%d\n' % num_gpus)
+    for vm in vms[1:]:
+      machine_file.write('%s slots=%d\n' % (vm.internal_ip,
+                                            num_gpus))
+    machine_file.close()
+    master_vm.PushFile(machine_file.name, MACHINEFILE)
 
 
 def _ExtractResult(shoc_output, result_name):
@@ -94,17 +134,19 @@ def _ExtractResult(shoc_output, result_name):
   result_units = result_line[-1]
   return (result_value, result_units)
 
+
 def _MakeSamplesFromOutput(stdout, metadata):
   results = []
   for metric in ('stencil:', 'stencil_dp:'):
-    (value, unit) = _ExtractResult(stdout, metric) 
+    (value, unit) = _ExtractResult(stdout, metric)
     results.append(sample.Sample(
         metric[:-1], # strip trailing colon
         value,
         unit,
         metadata))
   return results
-  
+
+
 def _MakeSamplesFromStencilOutput(stdout, metadata):
   dp_mean_results = [x for x in stdout.splitlines() if x.find('DP_Sten2D(mean)') != -1][0].split()
   dp_units = dp_mean_results[2]
@@ -113,7 +155,7 @@ def _MakeSamplesFromStencilOutput(stdout, metadata):
   dp_stddev = float(dp_mean_results[5])
   dp_min = float(dp_mean_results[6])
   dp_max = float(dp_mean_results[7])
-   
+
   sp_mean_results = [x for x in stdout.splitlines() if x.find('SP_Sten2D(mean)') != -1][0].split()
   sp_units = sp_mean_results[2]
   sp_median = float(sp_mean_results[3])
@@ -147,26 +189,29 @@ def Run(benchmark_spec):
   Returns:
     A list of sample.Sample objects.
   """
-  vm = benchmark_spec.vms[0]
-  # Note:  The clock speed is set in this function rather than Prepare()
-  # so that the user can perform multiple runs with a specified
-  # clock speed without having to re-prepare the VM.
-  cuda_toolkit_8.SetAndConfirmGpuClocks(vm)
+  vms = benchmark_spec.vms
+  master_vm = vms[0]
+  num_gpus = cuda_toolkit_8.QueryNumberOfGpus(master_vm)  #TODO: Dont replicate
   num_iterations = FLAGS.shoc_iterations
+  #problem_size = '19456,19456'
+  problem_size = '4096,4096'
   stencil2d_path = os.path.join(shoc_benchmark_suite.SHOC_BIN_DIR,
                                 'TP', 'CUDA', 'Stencil2D')
-  num_gpus = cuda_toolkit_8.QueryNumberOfGpus(vm)
+  num_processes = len(vms) * num_gpus
+  run_command = ('mpirun --hostfile %s -np %s %s --customSize %s' %
+                 (MACHINEFILE, num_processes, stencil2d_path, problem_size))
   metadata = {}
   results = []
   metadata['benchmark_version'] = BENCHMARK_VERSION
   metadata['num_iterations'] = num_iterations
-  metadata['num_gpus'] = num_gpus
+  metadata['gpu_per_node'] = num_gpus
   metadata['memory_clock_MHz'] = FLAGS.gpu_clock_speeds[0]
   metadata['graphics_clock_MHz'] = FLAGS.gpu_clock_speeds[1]
-  run_command = ('mpirun -np %s %s --customSize 19456,19456' %
-                 (num_gpus, stencil2d_path))
   metadata['run_command'] = run_command
-  stdout, _ = vm.RemoteCommand(run_command, should_log=True)
+  metadata['num_nodes'] = len(vms)
+  metadata['num_processes'] = num_processes
+
+  stdout, _ = master_vm.RemoteCommand(run_command, should_log=True)
   results.extend(_MakeSamplesFromStencilOutput(stdout, metadata))
   return results
 
