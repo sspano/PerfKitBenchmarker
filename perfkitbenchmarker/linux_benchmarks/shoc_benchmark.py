@@ -49,8 +49,7 @@ shoc:
     default:
       vm_spec:
         GCP:
-          image: ubuntu-1604-xenial-v20170303
-          image_project: ubuntu-os-cloud
+          image: cuda-toolkit-8-shoc
           machine_type: n1-standard-4-k80x1
           zone: us-east1-d
           boot_disk_size: 200
@@ -193,8 +192,7 @@ def Run(benchmark_spec):
   master_vm = vms[0]
   num_gpus = cuda_toolkit_8.QueryNumberOfGpus(master_vm)  #TODO: Dont replicate
   num_iterations = FLAGS.shoc_iterations
-  #problem_size = '19456,19456'
-  problem_size = '4096,4096'
+  problem_size = '19456,19456'
   stencil2d_path = os.path.join(shoc_benchmark_suite.SHOC_BIN_DIR,
                                 'TP', 'CUDA', 'Stencil2D')
   num_processes = len(vms) * num_gpus
