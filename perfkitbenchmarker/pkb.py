@@ -92,6 +92,8 @@ from perfkitbenchmarker import windows_benchmarks
 from perfkitbenchmarker.configs import benchmark_config_spec
 from perfkitbenchmarker.linux_benchmarks import cluster_boot_benchmark
 from perfkitbenchmarker.publisher import SampleCollector
+from datetime import datetime
+
 
 LOG_FILE_NAME = 'pkb.log'
 REQUIRED_INFO = ['scratch_disk', 'num_machines']
@@ -324,7 +326,7 @@ def _CreateBenchmarkSpecs():
     A list of BenchmarkSpecs.
   """
   specs = []
-  benchmark_tuple_list = benchmark_sets.GetBenchmarksFromFlags()
+  benchmark_tuple_list, parallel_order = benchmark_sets.GetBenchmarksFromFlags()
   benchmark_counts = collections.defaultdict(itertools.count)
   for benchmark_module, user_config in benchmark_tuple_list:
     # Construct benchmark config object.
@@ -358,8 +360,11 @@ def _CreateBenchmarkSpecs():
 
     specs.append(benchmark_spec.BenchmarkSpec.GetBenchmarkSpec(
         benchmark_module, config, uid))
-
-  return specs
+  if parallel_order:
+    specd = dict((s.name, s) for s in specs)
+    return [[specd[s] for s in section] for section in parallel_order]
+  else:
+    return specs
 
 
 def DoProvisionPhase(spec, timer):
@@ -442,7 +447,7 @@ def DoRunPhase(spec, collector, timer):
     if FLAGS.run_stage_time:
       for sample in samples:
         sample.metadata['run_number'] = run_number
-    collector.AddSamples(samples, spec.name, spec)
+    collector.AddSamples(samples, "cjw_" + spec.name, spec)
     if FLAGS.publish_after_run:
       collector.PublishSamples()
     run_number += 1
@@ -494,6 +499,7 @@ def RunBenchmark(spec, collector):
       spec.name, spec.sequence_number, spec.total_benchmarks)
   context.SetThreadBenchmarkSpec(spec)
   log_context = log_util.GetThreadLogContext()
+  logging.info('Running benchmark "%s" with stages %s', spec.name, FLAGS.run_stage)
   with log_context.ExtendLabel(label_extension):
     with spec.RedirectGlobalFlags():
       end_to_end_timer = timing_util.IntervalTimer()
@@ -553,6 +559,7 @@ def RunBenchmarkTask(spec):
   Returns:
     A tuple of BenchmarkSpec, list of samples.
   """
+  logging.info('Task start: %s', spec.name)
   if _TEARDOWN_EVENT.is_set():
     return spec, []
 
@@ -577,6 +584,7 @@ def RunBenchmarkTask(spec):
     # We need to return both the spec and samples so that we know
     # the status of the test and can publish any samples that
     # haven't yet been published.
+    logging.info('Task end: %s', spec.name)
     return spec, collector.samples
 
 
@@ -641,13 +649,105 @@ def SetUpPKB():
   events.initialization_complete.send(parsed_flags=FLAGS)
 
 
-def RunBenchmarks():
+def _DoOneTimeSetup(benchmarks_specs_groups, all_stages):
+  """Does the provision stage needed for all benchmarks.
+
+  Args:
+     benchmarks_specs_groups: list of lists of tests to run
+     all_stages: what run stages to go through
+
+  Returns:
+    List of tests that had the provision / prepare stage run on
+  """
+  logging.info('Doing onetime setup on %s', benchmarks_specs_groups)
+  seen = set()
+  vms = None
+  bs_had_action = list()
+  for bs_config in benchmarks_specs_groups:
+    for bs in bs_config:
+      if bs.name in seen:
+        continue
+      seen.add(bs.name)
+      bs_had_action.append(bs)
+      if vms:
+        bs.vms = vms
+      else:
+        timer = timing_util.IntervalTimer()
+        if not vms and stages.PROVISION in all_stages:
+          DoProvisionPhase(bs, timer)
+          vms = bs.vms
+      if stages.PREPARE in all_stages:
+        # ideally prepare could be run in parallel but for now don't
+        # take chances
+        DoPreparePhase(bs, timer)
+  logging.info('Done with provision/prepare on %d vms in %s', len(vms), bs_had_action)
+  return vms, bs_had_action
+
+
+def _KeepOnlyRunStageFlag():
+  orig_run_stage = FLAGS.run_stage[:]
+  for st in (stages.PROVISION, stages.PREPARE, stages.CLEANUP, stages.TEARDOWN):
+    try:
+      FLAGS.run_stage.remove(st)
+    except:
+      pass
+  logging.info('Original run stages: %s reduced to %s', orig_run_stage, FLAGS.run_stage)
+  return orig_run_stage
+
+
+def _DoMultiTests(benchmark_specs):
+  logging.info('Starting multitest')
+  vms, bs_to_run = _DoOneTimeSetup(benchmark_specs, FLAGS.run_stage)
+  if not bs_to_run:
+    raise ValueError('Do not have tests to run from input {}'.format(benchmark_specs))
+  # RunBenchmarks will run all phases found in the run_stage flag, which will
+  # normally teardown instances that we need later on.  Remove everything
+  # except for the "run" stage
+  orig_run_stage = _KeepOnlyRunStageFlag()
+  try:
+    for pos, bs_vals in enumerate(benchmark_specs):
+      # this is just like a run of the mill test now
+      meta = dict(_sortie=pos, _starttime=float(datetime.now().strftime('%s.%f')))
+      ret_code = RunBenchmarks(bs_vals, meta)
+      if ret_code != 0:
+        logging.warn('Failed on test(s) %s', bs_vals)
+        return ret_code
+    # all tests pass
+    return 0
+  finally:
+    logging.info('Done multitest.  Starting cleanup/teardown of {}'.format(bs_to_run))
+    # set the run flags back to their original value
+    FLAGS.run_stage = orig_run_stage
+    timer = timing_util.IntervalTimer()
+    # need to run cleanup on all tests
+    if stages.CLEANUP in FLAGS.run_stage:
+      for bs in bs_to_run:
+        DoCleanupPhase(bs, timer)
+    # only need to do teardown on first of the tests
+    if stages.TEARDOWN in FLAGS.run_stage:
+      DoTeardownPhase(bs_to_run[0], timer)
+    logging.info('Done with multitest cleanup/teardown')
+
+
+
+def RunBenchmarks(benchmark_specs=None, sample_extra_metadata=None):
   """Runs all benchmarks in PerfKitBenchmarker.
+
+  Args:
+    benchmark_specs: optional list of benchmarks to run.  When None looks up
+      specs from the command line and runs through again
 
   Returns:
     Exit status for the process.
   """
-  benchmark_specs = _CreateBenchmarkSpecs()
+  if not benchmark_specs:
+    # first time through
+    return RunBenchmarks(_CreateBenchmarkSpecs())
+  if benchmark_specs and isinstance(benchmark_specs[0], list):
+    # parallel tests are lists of lists
+    return _DoMultiTests(benchmark_specs)
+  logging.info('benchmark_specs %s', [_.name for _ in benchmark_specs])
+
   collector = SampleCollector()
 
   try:
@@ -657,6 +757,9 @@ def RunBenchmarks():
         tasks, FLAGS.run_processes)
     benchmark_specs, sample_lists = zip(*spec_sample_tuples)
     for sample_list in sample_lists:
+      if sample_extra_metadata:
+        for samp in sample_list:
+          samp['metadata'].update(sample_extra_metadata)
       collector.samples.extend(sample_list)
 
   finally:
@@ -668,7 +771,6 @@ def RunBenchmarks():
 
     logging.info('Complete logs can be found at: %s',
                  vm_util.PrependTempDir(LOG_FILE_NAME))
-
 
   if stages.TEARDOWN not in FLAGS.run_stage:
     logging.info(

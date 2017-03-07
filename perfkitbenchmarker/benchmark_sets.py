@@ -192,10 +192,18 @@ def GetBenchmarksFromFlags():
     return benchmark_config_list
 
   benchmark_names = set()
+  has_parallel_test = False
   for benchmark in FLAGS.benchmarks:
     if benchmark in BENCHMARK_SETS:
       benchmark_names |= set(BENCHMARK_SETS[benchmark][BENCHMARK_LIST])
     else:
+      # trim symbols used for parallel tests taken care of later
+      if benchmark.startswith('('):
+        has_parallel_test = True
+        benchmark = benchmark[1:]
+      if benchmark.endswith(')'):
+        has_parallel_test = True
+        benchmark = benchmark[:-1]
       benchmark_names.add(benchmark)
 
   # Expand recursive sets
@@ -213,10 +221,18 @@ def GetBenchmarksFromFlags():
                 benchmark_name][BENCHMARK_LIST])
         break
 
-  valid_benchmarks = _GetValidBenchmarks()
+  benchmark_configs = _CreateBenchmarkDict(benchmark_names, user_config)
+  if has_parallel_test:
+    multibench_order = list(_BenchmarksAsTuples(FLAGS.benchmarks))
+  else:
+    multibench_order = None
+  return benchmark_configs.values(), multibench_order
 
+
+def _CreateBenchmarkDict(benchmark_names, user_config):
   # create a list of module, config tuples to return
-  benchmark_config_list = []
+  valid_benchmarks = _GetValidBenchmarks()
+  benchmark_configs = dict()
   for benchmark_name in benchmark_names:
     benchmark_config = user_config.get(benchmark_name, {})
     benchmark_name = benchmark_config.get('name', benchmark_name)
@@ -252,6 +268,54 @@ def GetBenchmarksFromFlags():
       if (flag_matrix_filter and not eval(
           flag_matrix_filter, {}, config['flags'])):
           continue
-      benchmark_config_list.append((benchmark_module, config))
+      benchmark_configs[benchmark_name] = benchmark_module, config
+  return benchmark_configs
 
-  return benchmark_config_list
+
+def _BenchmarksAsTuples(values):
+  """Parses list of parallel tests.
+
+  Args:
+     values: list of string tests to run
+
+  Example:
+    From the command line this is what FLAGS.tests looks like:
+      ['a', 'b', '(a', 'b)', 'c']
+    This will return a generator of length four, values are:
+      ['a'] .. ['b'] .. ['a', 'b'] .. ['c']]
+
+  Yields:
+    Arrays of tests to run at the same time
+
+  Throws:
+    ValueError if the input array does not parse correctly, ie has mismatched
+      parenthesis.
+  """
+  cur = list()
+  in_parallel = False
+  for e in values:
+    if e.startswith('('):
+      if in_parallel:
+        raise ValueError('Already in a parallel section {}'.format(e))
+      if cur:
+        yield cur
+      cur = list()
+      # let this fall through as could be passed in '(a)'
+      e = e[1:]
+      in_parallel = True
+    if e.endswith(')'):
+      if not in_parallel:
+        raise ValueError('Not in a parallel section {}'.format(e))
+      e = e[:-1]
+      cur.append(e)
+      yield cur
+      cur = list()
+      in_parallel = False
+      # go on to next value as current one already used up
+      continue
+    cur.append(e)
+  if in_parallel:
+    raise ValueError('Ended parsing and in parallel section')
+  if cur:
+    yield cur
+

@@ -413,7 +413,7 @@ def Run(benchmark_spec):
     assert(num_streams >= 1)
 
     for netperf_benchmark in FLAGS.netperf_benchmarks:
-      if vm_util.ShouldRunOnExternalIpAddress():
+      if False and vm_util.ShouldRunOnExternalIpAddress():
         external_ip_results = RunNetperf(client_vm, netperf_benchmark,
                                          server_vm.ip_address, num_streams)
         for external_ip_result in external_ip_results:
