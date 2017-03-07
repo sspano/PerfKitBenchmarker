@@ -42,7 +42,7 @@ BENCHMARK_VERSION = '0.22'
 # because GCE does not support migrating the user's GPU state.
 BENCHMARK_CONFIG = """
 shoc:
-  description: Runs SHOC Benchmark Suite.
+  description: Runs SHOC Benchmark Suite. Specify the number of VMs with --num_vms
   flags:
     gce_migrate_on_maintenance: False
   vm_groups:

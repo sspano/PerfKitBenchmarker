@@ -45,7 +45,7 @@ shoc:
       ]
       zones: [us-east1-d]
     AWS:
-      image: [Ubuntu1604-cuda-shoc]
+      image: [ami-a9d276c9]
       machine_type: [
         p2.xlarge, p2.8xlarge, p2.16xlarge
       ]
