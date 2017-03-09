@@ -762,7 +762,6 @@ class SampleCollector(object):
   results via any number of SamplePublishers.
 
   Attributes:
-    samples: A list of Sample objects.
     metadata_providers: A list of MetadataProvider objects. Metadata providers
       to use.  Defaults to DEFAULT_METADATA_PROVIDERS.
     publishers: A list of SamplePublisher objects. If not specified, defaults to
@@ -770,9 +769,9 @@ class SampleCollector(object):
       a BigQueryPublisher if FLAGS.bigquery_table is specified, and a
       CloudStoragePublisher if FLAGS.cloud_storage_bucket is specified. See
       SampleCollector._DefaultPublishers.
-    run_uri: A unique tag for the run.
+    extra_metadata: dict to add to Sample.metadata
   """
-  def __init__(self, metadata_providers=None, publishers=None):
+  def __init__(self, metadata_providers=None, publishers=None, extra_metadata=None):
     self.samples = []
 
     if metadata_providers is not None:
@@ -784,6 +783,8 @@ class SampleCollector(object):
       self.publishers = publishers
     else:
       self.publishers = SampleCollector._DefaultPublishers()
+
+    self.extra_metadata = extra_metadata if extra_metadata else dict()
 
     logging.debug('Using publishers: {0}'.format(self.publishers))
 
@@ -842,6 +843,8 @@ class SampleCollector(object):
       sample['owner'] = FLAGS.owner
       sample['run_uri'] = benchmark_spec.uuid
       sample['sample_uri'] = str(uuid.uuid4())
+      sample['metadata'].update(self.extra_metadata)
+
       self.samples.append(sample)
 
   def PublishSamples(self):

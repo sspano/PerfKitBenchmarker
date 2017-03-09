@@ -32,6 +32,8 @@ MESSAGE = 'message'
 BENCHMARK_LIST = 'benchmark_list'
 STANDARD_SET = 'standard_set'
 
+PARALLEL_BENCHMARK_NAME = 'parallel'
+
 BENCHMARK_SETS = {
     STANDARD_SET: {
         MESSAGE: ('The standard_set is a community agreed upon set of '
@@ -221,18 +223,25 @@ def GetBenchmarksFromFlags():
                 benchmark_name][BENCHMARK_LIST])
         break
 
+  if has_parallel_test:
+    benchmark_names.add(PARALLEL_BENCHMARK_NAME)
   benchmark_configs = _CreateBenchmarkDict(benchmark_names, user_config)
   if has_parallel_test:
     multibench_order = list(_BenchmarksAsTuples(FLAGS.benchmarks))
   else:
     multibench_order = None
-  return benchmark_configs.values(), multibench_order
+  ret = benchmark_configs.values()
+  if multibench_order:
+    # put the parallel benchmark at the front of the list
+    first_val = benchmark_configs.pop(PARALLEL_BENCHMARK_NAME)
+    ret.insert(0, first_val)
+  return ret, multibench_order
 
 
 def _CreateBenchmarkDict(benchmark_names, user_config):
   # create a list of module, config tuples to return
-  valid_benchmarks = _GetValidBenchmarks()
   benchmark_configs = dict()
+  valid_benchmarks = _GetValidBenchmarks()
   for benchmark_name in benchmark_names:
     benchmark_config = user_config.get(benchmark_name, {})
     benchmark_name = benchmark_config.get('name', benchmark_name)
@@ -282,7 +291,7 @@ def _BenchmarksAsTuples(values):
     From the command line this is what FLAGS.tests looks like:
       ['a', 'b', '(a', 'b)', 'c']
     This will return a generator of length four, values are:
-      ['a'] .. ['b'] .. ['a', 'b'] .. ['c']]
+      ['a'] .. ['b'] .. ['a', 'b'] .. ['c']
 
   Yields:
     Arrays of tests to run at the same time

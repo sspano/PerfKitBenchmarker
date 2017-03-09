@@ -119,6 +119,13 @@ class BenchmarkSpec(object):
     self.BenchmarkRun = benchmark_module.Run
     self.BenchmarkCleanup = benchmark_module.Cleanup
 
+    # so that when we record Samples get a different name than the actual
+    # benchmark
+    try:
+      self.sample_name = benchmark_module.SAMPLE_PREFIX + self.name
+    except:
+      self.sample_name = self.name
+
     # Set the current thread's BenchmarkSpec object to this one.
     context.SetThreadBenchmarkSpec(self)
 
