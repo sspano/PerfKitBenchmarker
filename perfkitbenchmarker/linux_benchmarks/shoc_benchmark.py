@@ -32,12 +32,16 @@ flags.DEFINE_integer('shoc_iterations', 1,
                      'number of iterations to run',
                      lower_bound=1)
 
-
+flags.DEFINE_string('problem_size', '4096,4096',
+                    'problem size')
+#'19456,19456'
 FLAGS = flags.FLAGS
 
+NETWORK_DELAY_CMD = 'tc qdisc add dev ens5 root netem delay {}ms'
+NETWORK_DELAY_TEARDOWN_CMD = 'tc qdisc del dev eth0 root'
 MACHINEFILE = 'machinefile'
 BENCHMARK_NAME = 'shoc'
-BENCHMARK_VERSION = '0.22'
+BENCHMARK_VERSION = '0.23'
 # Note on the config: gce_migrate_on_maintenance must be false,
 # because GCE does not support migrating the user's GPU state.
 BENCHMARK_CONFIG = """
@@ -90,6 +94,58 @@ def AssertCorrectNumberOfGpus(vm):
                     'Expected %s, received %s' %
                     (expected_num_gpus, actual_num_gpus))
 
+def RunCmd(vm, command, user=None, command_context=None):
+  if command_context:
+    command = command.format(**command_context)
+  command = MakeRemoteCommand(user, command)
+  return vm.RemoteCommand(command)
+
+
+def MakeRemoteCommand(user, command):
+  if user is None:
+    return command
+  else:
+    return "sudo -u {user} -i -- sh -c '{command}'".format(
+        user=user, command=command)
+
+
+def ClearNetworking(vms):
+  cmds = [NETWORK_DELAY_TEARDOWN_CMD,]
+  cmds.append(NETWORK_BUSY_READ.format(0))
+  cmds.append(NETWORK_BUSY_POLL.format(0))
+  cmd = ';'.join(cmds)
+  vm_util.RunThreaded(lambda vm: RunCmd(vm, cmd, 'root'), vms)
+
+
+def SetNetworkSettings(vms, busy_read, busy_poll, network_delay):
+  """Sets network features if non zero, returning options set.
+
+  Args:
+    vms: worker vms to run on
+    busy_read: integer to set busy read to
+    busy_poll: integer to set busy poll to
+    network_delay: float of milliseconds for ethernet delay
+
+  Returns:
+    Dict of non-zero network settings for putting into labels
+  """
+
+  cmds = list()
+  context = dict()
+  if busy_poll:
+    cmds.append(NETWORK_BUSY_POLL.format(busy_poll))
+    context['network_busy_poll'] = busy_poll
+  if busy_read:
+    cmds.append(NETWORK_BUSY_READ.format(busy_read))
+    context['network_busy_read'] = busy_read
+  if network_delay:
+    cmds.append(NETWORK_DELAY_CMD.format(network_delay))
+    context['network_delay_ms'] = network_delay
+  cmd = ';'.join(cmds)
+  if cmd:
+    vm_util.RunThreaded(lambda vm: RunCmd(vm, cmd, 'root'), vms)
+  return context
+
 
 def Prepare(benchmark_spec):
   """Install SHOC.
@@ -107,6 +163,10 @@ def Prepare(benchmark_spec):
   master_vm = benchmark_spec.vms[0]
   num_gpus = cuda_toolkit_8.QueryNumberOfGpus(master_vm)
   CreateAndPushMachineFile(benchmark_spec.vms, num_gpus)
+  #busy_read = 0
+  #busy_poll = 0
+  #network_delay = 5
+  #SetNetworkSettings(benchmark_spec.vms, busy_read, busy_poll, network_delay)
 
 
 def CreateAndPushMachineFile(vms, num_gpus):
@@ -192,7 +252,7 @@ def Run(benchmark_spec):
   master_vm = vms[0]
   num_gpus = cuda_toolkit_8.QueryNumberOfGpus(master_vm)  #TODO: Dont replicate
   num_iterations = FLAGS.shoc_iterations
-  problem_size = '19456,19456'
+  problem_size = FLAGS.problem_size
   stencil2d_path = os.path.join(shoc_benchmark_suite.SHOC_BIN_DIR,
                                 'TP', 'CUDA', 'Stencil2D')
   num_processes = len(vms) * num_gpus
@@ -202,12 +262,13 @@ def Run(benchmark_spec):
   results = []
   metadata['benchmark_version'] = BENCHMARK_VERSION
   metadata['num_iterations'] = num_iterations
-  metadata['gpu_per_node'] = num_gpus
+  metadata['gpus_per_node'] = num_gpus
   metadata['memory_clock_MHz'] = FLAGS.gpu_clock_speeds[0]
   metadata['graphics_clock_MHz'] = FLAGS.gpu_clock_speeds[1]
   metadata['run_command'] = run_command
   metadata['num_nodes'] = len(vms)
   metadata['num_processes'] = num_processes
+  metadata['problem_size'] = problem_size
 
   stdout, _ = master_vm.RemoteCommand(run_command, should_log=True)
   results.extend(_MakeSamplesFromStencilOutput(stdout, metadata))
