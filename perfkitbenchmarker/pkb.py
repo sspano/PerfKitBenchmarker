@@ -654,13 +654,12 @@ def SetUpPKB():
   events.initialization_complete.send(parsed_flags=FLAGS)
 
 
-def RunBenchmarks(benchmark_specs=None, sample_extra_metadata=None):
+def RunBenchmarks(benchmark_specs=None):
   """Runs all benchmarks in PerfKitBenchmarker.
 
   Args:
     benchmark_specs: optional list of benchmarks to run.  When None looks up
       specs from the command line and runs through again
-    sample_extra_metadata: a dict to add to individual Sample.metadata
 
   Returns:
     Exit status for the process.
@@ -670,7 +669,7 @@ def RunBenchmarks(benchmark_specs=None, sample_extra_metadata=None):
     benchmark_specs = _CreateBenchmarkSpecs()
   logging.info('benchmark_specs %s', [_.name for _ in benchmark_specs])
 
-  collector = SampleCollector(extra_metadata=sample_extra_metadata)
+  collector = SampleCollector()
 
   try:
     tasks = [(RunBenchmarkTask, (spec,), {})
