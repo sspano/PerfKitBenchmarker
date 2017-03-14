@@ -224,23 +224,27 @@ def GetBenchmarksFromFlags():
         break
 
   if has_parallel_test:
-    benchmark_names.add(PARALLEL_BENCHMARK_NAME)
-  benchmark_configs = _CreateBenchmarkDict(benchmark_names, user_config)
-  if has_parallel_test:
     multibench_order = list(_BenchmarksAsTuples(FLAGS.benchmarks))
+    # as the parallel tests might have repeated tests add the repeats on
+    # to the list of benchmarks so they are created with their own run_uri
+    seen = set()
+    benchmark_names = list(benchmark_names)
+    for bm_order in multibench_order:
+      for bm in bm_order:
+        if bm in seen:
+          benchmark_names.append(bm)
+        else:
+          seen.add(bm)
+    benchmark_names.insert(0, PARALLEL_BENCHMARK_NAME)
   else:
     multibench_order = None
-  ret = benchmark_configs.values()
-  if multibench_order:
-    # put the parallel benchmark at the front of the list
-    first_val = benchmark_configs.pop(PARALLEL_BENCHMARK_NAME)
-    ret.insert(0, first_val)
-  return ret, multibench_order
+
+  return _CreateBenchmarks(benchmark_names, user_config), multibench_order
 
 
-def _CreateBenchmarkDict(benchmark_names, user_config):
+def _CreateBenchmarks(benchmark_names, user_config):
   # create a list of module, config tuples to return
-  benchmark_configs = dict()
+  benchmark_configs = list()
   valid_benchmarks = _GetValidBenchmarks()
   for benchmark_name in benchmark_names:
     benchmark_config = user_config.get(benchmark_name, {})
@@ -277,7 +281,7 @@ def _CreateBenchmarkDict(benchmark_names, user_config):
       if (flag_matrix_filter and not eval(
           flag_matrix_filter, {}, config['flags'])):
           continue
-      benchmark_configs[benchmark_name] = benchmark_module, config
+      benchmark_configs.append((benchmark_module, config))
   return benchmark_configs
 
 

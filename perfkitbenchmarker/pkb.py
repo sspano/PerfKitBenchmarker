@@ -363,8 +363,19 @@ def _CreateBenchmarkSpecs():
     # with a parallel benchmark only return parallel_benchmark adding the
     # other benchmarks to its benchmark_spec
     return_benchmark = specs.pop(0)
-    specd = dict((s.name, s) for s in specs)
-    subbenchmarks = [[specd[s] for s in section] for section in parallel_order]
+    specd = collections.defaultdict(list)
+    for s in specs:
+      specd[s.name].append(s)
+    subbenchmarks = list()
+    for section in parallel_order:
+      sub = list()
+      for s in section:
+        sub.append(specd[s].pop(0))
+        if not specd[s]:
+          specd.pop(s)
+      subbenchmarks.append(sub)
+    if specd:
+      raise Exception('Should not have leftovers in %s' % (specd, ))
     return_benchmark.pkb = dict(
       subbenchmarks=subbenchmarks,
       prepare=DoPreparePhase,
