@@ -116,25 +116,8 @@ def QueryGpuClockSpeed(vm, device_id):
   return (int(matches[0]), int(matches[1]))
 
 
-def _CheckNvidiaSmiExists(vm):
-  """Returns whether nvidia-smi is installed or not"""
-  resp, _ = vm.RemoteHostCommand('command -v nvidia-smi',
-                                   ignore_failure=True,
-                                   suppress_warning=True)
-  if resp.rstrip() == "":
-    return False
-  return True
-
-
-def DoPostInstallActions(vm):
-    SetAndConfirmGpuClocks(vm)
-
 def AptInstall(vm):
-  """Installs CUDA toolkit 8 on the VM if not already installed"""
-  if _CheckNvidiaSmiExists(vm):
-    DoPostInstallActions(vm)
-    return
-
+  """Installs CUDA toolkit 8 on the VM."""
   vm.Install('build_tools')
   vm.Install('wget')
   vm.RemoteCommand('wget %s' % CUDA_TOOLKIT_UBUNTU_URL)
@@ -143,7 +126,6 @@ def AptInstall(vm):
   vm.RemoteCommand('sudo apt-get install -y cuda')
   vm.RemoteCommand('sudo reboot', ignore_failure=True)
   vm.WaitForBootCompletion()
-  DoPostInstallActions(vm)
 
 
 def YumInstall(vm):
