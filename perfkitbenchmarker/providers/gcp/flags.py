@@ -63,3 +63,4 @@ flags.DEFINE_integer('gce_boot_disk_size', None,
 flags.DEFINE_enum('gce_boot_disk_type', None, ['pd-standard', 'pd-ssd'],
                   'The boot disk type for GCP VMs.')
 flags.DEFINE_boolean('gcloud_alpha', False, 'If true use gcloud alpha')
+flags.DEFINE_string('gce_min_cpu_platform', None, 'Minimum CPU platform')
