@@ -217,6 +217,8 @@ class GceVmSpec(virtual_machine.BaseVmSpec):
       config_values['project'] = flag_values.project
     if flag_values['image_project'].present:
       config_values['image_project'] = flag_values.image_project
+    if flag_values['gce_min_cpu_platform'].present:
+      config_values['min_cpu_platform'] = flag_values.gce_min_cpu_platform
 
   @classmethod
   def _GetOptionDecoderConstructions(cls):
@@ -236,7 +238,8 @@ class GceVmSpec(virtual_machine.BaseVmSpec):
         'boot_disk_size': (option_decoders.IntDecoder, {'default': None}),
         'boot_disk_type': (option_decoders.StringDecoder, {'default': None}),
         'project': (option_decoders.StringDecoder, {'default': None}),
-        'image_project': (option_decoders.StringDecoder, {'default': None})})
+        'image_project': (option_decoders.StringDecoder, {'default': None}),
+        'min_cpu_platform': (option_decoders.StringDecoder, {'default': None})})
     return result
 
 
@@ -275,6 +278,7 @@ class GceVirtualMachine(virtual_machine.BaseVirtualMachine):
     self.boot_disk_size = vm_spec.boot_disk_size
     self.boot_disk_type = vm_spec.boot_disk_type
     self.id = None
+    self.min_cpu_platform = vm_spec.min_cpu_platform
 
   def _GenerateCreateCommand(self, ssh_keys_path):
     """Generates a command to create the VM instance.
@@ -303,6 +307,8 @@ class GceVirtualMachine(virtual_machine.BaseVirtualMachine):
       cmd.flags['machine-type'] = self.machine_type
     cmd.flags['tags'] = 'perfkitbenchmarker'
     cmd.flags['no-restart-on-failure'] = True
+    if self.min_cpu_platform:
+      cmd.flags['min-cpu-platform'] = self.min_cpu_platform
 
     metadata_from_file = {'sshKeys': ssh_keys_path}
     parsed_metadata_from_file = flag_util.ParseKeyValuePairs(

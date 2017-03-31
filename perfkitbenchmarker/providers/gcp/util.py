@@ -80,6 +80,8 @@ class GcloudCommand(object):
           cmd.append(flag_name_str)
           cmd.append(str(value))
     cmd.extend(self.additional_flags)
+    if FLAGS.alpha and 'attach-disk' not in cmd:
+      cmd.insert(0, 'alpha')
     return cmd
 
   def __repr__(self):
