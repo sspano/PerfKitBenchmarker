@@ -22,13 +22,8 @@ managed MySQL services.
 
 As other cloud providers deliver a managed MySQL service, we will add it here.
 
-As of May 2017 to make this benchmark run for GCP you must install the
-gcloud beta component. This is necessary because creating a Cloud SQL instance
-with a non-default storage size is in beta right now. This can be removed when
-this feature is part of the default components.
-See https://cloud.google.com/sdk/gcloud/reference/beta/sql/instances/create
-for more information.
-To run this benchmark for GCP it is required to install a non-default gcloud
+To make this benchmark run for GCP:
+To run this benchmark for GCP if is required to install a non-default gcloud
 component. Otherwise this benchmark will fail.
 
 To ensure that gcloud beta is installed, type
@@ -41,6 +36,11 @@ has status: Installed.
 If not, run
         'gcloud components install beta'
 to install it. This will allow this benchmark to properly create an instance.
+This is necessary only because creating a SQL instance with a non-default
+storage size is in beta right now. This can be removed when this feature is
+part of the default components.
+See https://cloud.google.com/sdk/gcloud/reference/beta/sql/instances/create
+for more information.
 """
 import json
 import logging
@@ -80,8 +80,7 @@ flags.DEFINE_integer('sysbench_latency_percentile', 99,
 flags.DEFINE_integer('sysbench_report_interval', 2,
                      'The interval, in seconds, we ask sysbench to report '
                      'results.')
-flags.DEFINE_integer('storage_size', 100,
-                     'Storage size for SQL instance in GB.')
+flags.DEFINE_integer('storage_size', 100, 'Storage size for SQL instance.')
 
 BENCHMARK_NAME = 'mysql_service'
 BENCHMARK_CONFIG = """
@@ -141,10 +140,6 @@ RESPONSE_TIME_TOKENS = ['min', 'avg', 'max', 'percentile']
 
 def GetConfig(user_config):
   return configs.LoadConfig(BENCHMARK_CONFIG, user_config, BENCHMARK_NAME)
-
-
-class StorageSizeFlagError(Exception):
-  pass
 
 
 class DBStatusQueryError(Exception):
@@ -336,8 +331,49 @@ def _RunSysbench(vm, metadata):
   Returns:
     Results: A list of results of this run.
   """
-  results = []
+  results = DATA_LOAD_RESULTS
 
+  if not hasattr(vm, 'db_instance_address'):
+    logging.error(
+        'Prepare has likely failed, db_instance_address is not found.')
+    raise DBStatusQueryError('RunSysbench: DB instance address not found.')
+
+  # Now run the sysbench OLTP test and parse the results.
+  for phase in ['warm-up', 'run']:
+    # First step is to run the test long enough to cover the warmup period
+    # as requested by the caller. Then we do the "real" run, parse and report
+    # the results.
+    duration = 0
+    if phase == 'warm-up' and FLAGS.sysbench_warmup_seconds > 0:
+      duration = FLAGS.sysbench_warmup_seconds
+      logging.info('Sysbench warm-up run, duration is %d', duration)
+    elif phase == 'run':
+      duration = FLAGS.sysbench_run_seconds
+      logging.info('Sysbench real run, duration is %d', duration)
+
+    stdout, stderr = _IssueSysbenchCommand(vm, duration)
+
+    if phase == 'run':
+      # We only need to parse the results for the "real" run.
+      logging.info('\n Parsing Sysbench Results...\n')
+      ParseSysbenchOutput(stdout, results, metadata)
+
+  return results
+
+
+def _PrepareSysbench(vm, metadata):
+  """Prepares the Sysbench OLTP test with data loading stage.
+
+  Data loaded on the DB instance indicated by the vm.db_instance_address.
+
+  Args:
+    vm: The client VM that will issue the sysbench test.
+    metadata: The PKB metadata to be passed along to the final results.
+
+  Results:
+    Results: A list of results of the data loading step.
+  """
+  results = []
   if not hasattr(vm, 'db_instance_address'):
     logging.error(
         'Prepare has likely failed, db_instance_address is not found.')
@@ -388,27 +424,6 @@ def _RunSysbench(vm, metadata):
       load_duration,
       SECONDS_UNIT,
       metadata))
-
-  # Now run the sysbench OLTP test and parse the results.
-  for phase in ['warm-up', 'run']:
-    # First step is to run the test long enough to cover the warmup period
-    # as requested by the caller. Then we do the "real" run, parse and report
-    # the results.
-    duration = 0
-    if phase == 'warm-up' and FLAGS.sysbench_warmup_seconds > 0:
-      duration = FLAGS.sysbench_warmup_seconds
-      logging.info('Sysbench warm-up run, duration is %d', duration)
-    elif phase == 'run':
-      duration = FLAGS.sysbench_run_seconds
-      logging.info('Sysbench real run, duration is %d', duration)
-
-    stdout, stderr = _IssueSysbenchCommand(vm, duration)
-
-    if phase == 'run':
-      # We only need to parse the results for the "real" run.
-      logging.info('\n Parsing Sysbench Results...\n')
-      ParseSysbenchOutput(stdout, results, metadata)
-
   return results
 
 
@@ -457,7 +472,6 @@ class RDSMySQLBenchmark(object):
 
     # Get a list of zones and pick one that's different from the zone VM is in.
     new_subnet_zone = None
-    self._ValidateSize(FLAGS.storage_size)
     get_zones_cmd = util.AWS_PREFIX + ['ec2', 'describe-availability-zones']
     stdout, _, _ = vm_util.IssueCommand(get_zones_cmd)
     response = json.loads(stdout)
@@ -577,18 +591,6 @@ class RDSMySQLBenchmark(object):
                  vm.db_instance_address)
     logging.info('Complete output is:\n %s', response)
 
-  def _ValidateSize(self, size):
-    """Validate flag for storage size and throw exception if invalid.
-
-    AWS supports storage sizes from 1GB to 16TB currently.
-
-    Args:
-      size: (GB).
-    """
-    if size < 1 or size > 16000:
-      raise StorageSizeFlagError('Storage size flag given is not valid. '
-                                 'Must be between 1 and 16000 GB for AWS.')
-
   def Cleanup(self, vm):
     """Clean up RDS instances, cleanup the extra subnet created for the
        creation of the RDS instance.
@@ -698,7 +700,7 @@ class GoogleCloudSQLBenchmark(object):
     logging.info('Preparing MySQL Service benchmarks for Google Cloud SQL.')
 
     vm.db_instance_name = 'pkb%s' % FLAGS.run_uri
-    self._ValidateSize(FLAGS.storage_size)
+    storage_size = self._validate_size(FLAGS.storage_size)
     db_tier = 'db-n1-standard-%s' % FLAGS.mysql_svc_db_instance_cores
     # Currently, we create DB instance in the same zone as the test VM.
     db_instance_zone = vm.zone
@@ -730,7 +732,7 @@ class GoogleCloudSQLBenchmark(object):
                      '--gce-zone=%s' % db_instance_zone,
                      '--database-version=%s' % GCP_MY_SQL_VERSION,
                      '--pricing-plan=%s' % GCP_PRICING_PLAN,
-                     '--storage-size=%d' % FLAGS.storage_size]
+                     '--storage-size=%d' % storage_size]
 
     stdout, _, _ = vm_util.IssueCommand(create_db_cmd)
     logging.info('Create SQL instance completed. Stdout:\n%s', stdout)
@@ -788,17 +790,19 @@ class GoogleCloudSQLBenchmark(object):
     logging.info('Set root password completed. Stdout:\n%s\nStderr:\n%s',
                  stdout, stderr)
 
-  def _ValidateSize(self, size):
-    """Validate flag for storage size and throw exception if invalid.
-
-    GCP supports storage sizes from 1GB to 64TB currently.
+  def _validate_size(self, size):
+    """Validates flag for storage size, returns default if invalid.
 
     Args:
       size: (GB).
+    Returns:
+      size: (GB).
+
+    GCP supports storage sizes from 0 to 64TB currently.
     """
-    if size < 1 or size > 64000:
-      raise StorageSizeFlagError('Storage size flag is not valid. Must'
-                                 ' be between 1 and 64000 GB for GCP.')
+    if size < 0 or size > 64000:
+      size = 3334
+    return size
 
   def Cleanup(self, vm):
     if hasattr(vm, 'db_instance_name'):
@@ -819,6 +823,8 @@ MYSQL_SERVICE_BENCHMARK_DICTIONARY = {
     providers.GCP: GoogleCloudSQLBenchmark(),
     providers.AWS: RDSMySQLBenchmark()}
 
+DATA_LOAD_RESULTS = []
+
 
 def Prepare(benchmark_spec):
   """Prepare the MySQL DB Instances, configures it.
@@ -835,6 +841,8 @@ def Prepare(benchmark_spec):
 
   benchmark_spec.always_call_cleanup = True
 
+  DATA_LOAD_RESULTS = []
+
   vms = benchmark_spec.vms
 
   # Setup common test tools required on the client VM
@@ -842,6 +850,19 @@ def Prepare(benchmark_spec):
 
   # Prepare service specific states (create DB instance, configure it, etc)
   MYSQL_SERVICE_BENCHMARK_DICTIONARY[FLAGS.cloud].Prepare(vms[0])
+
+  metadata = {
+      'mysql_svc_oltp_tables_count': FLAGS.mysql_svc_oltp_tables_count,
+      'mysql_svc_oltp_table_size': FLAGS.mysql_svc_oltp_table_size,
+      'mysql_svc_db_instance_cores': FLAGS.mysql_svc_db_instance_cores,
+      'sysbench_warm_up_seconds': FLAGS.sysbench_warmup_seconds,
+      'sysbench_run_seconds': FLAGS.sysbench_run_seconds,
+      'sysbench_thread_count': FLAGS.sysbench_thread_count,
+      'sysbench_latency_percentile': FLAGS.sysbench_latency_percentile,
+      'sysbench_report_interval': FLAGS.sysbench_report_interval
+  }
+
+  DATA_LOAD_RESULTS.append(_PrepareSysbench(vms[0], metadata))
 
 
 def Run(benchmark_spec):
