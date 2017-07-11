@@ -723,7 +723,6 @@ class GoogleCloudSQLBenchmark(object):
 
   def Prepare(self, vm):
     """Prepares the DB and everything for the provider GCP (Cloud SQL).
-
     Args:
       vm: The VM to be used as the test client
     """
@@ -776,7 +775,6 @@ class GoogleCloudSQLBenchmark(object):
                         'instances',
                         'describe', vm.db_instance_name,
                         '--format', 'json']
-
     stdout, _, _ = vm_util.IssueCommand(status_query_cmd)
     response = json.loads(stdout)
 
